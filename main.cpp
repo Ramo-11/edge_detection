@@ -1,10 +1,11 @@
 #include <stdio.h>
 #include <math.h>
 
-#define WIDTH 275 // 750 and 275
-#define HEIGHT 183 // 500 and 183
+#define WIDTH 750 // 750 and 275
+#define HEIGHT 500 // 500 and 183
 #define DATA_SIZE WIDTH * HEIGHT
-#define EDGE_INTENSITY 200
+#define EDGE_INTENSITY 50
+#define NO_EDGE 0
 #define THRESHOLD 30 // This value should be set manually through trial and error
 
 unsigned char clampPixelValue(int value);
@@ -14,7 +15,8 @@ void computeGradients(unsigned char image_input[HEIGHT][WIDTH],
 
 void detectEdges(unsigned char horizontalGradient[HEIGHT][WIDTH],
                  unsigned char verticalGradient[HEIGHT][WIDTH],
-                 unsigned char edges[HEIGHT][WIDTH]);
+                 unsigned char horizontalEdges[HEIGHT][WIDTH],
+                 unsigned char verticalEdges[HEIGHT][WIDTH]);
 
 int main() {
     FILE *inputFile;
@@ -22,9 +24,10 @@ int main() {
     unsigned char inputData[DATA_SIZE];
     unsigned char edges[HEIGHT][WIDTH];
     unsigned char image_input[HEIGHT][WIDTH];
+    unsigned char horizontalEdges[HEIGHT][WIDTH], verticalEdges[HEIGHT][WIDTH];
     unsigned char horizontalGradient[HEIGHT][WIDTH], verticalGradient[HEIGHT][WIDTH];
 
-    const char *fileName = "japan.raw";
+    const char *fileName = "unesco750-1.raw";
     const char *horizontalOutputFileName = "verticalGradientImage.raw";
     const char *verticalOutputFileName = "horizontalGradientImage.raw";
 
@@ -41,12 +44,17 @@ int main() {
     }
 
     computeGradients(image_input, horizontalGradient, verticalGradient);
-    detectEdges(horizontalGradient, verticalGradient, edges);
+    detectEdges(horizontalGradient, verticalGradient, horizontalEdges, verticalEdges);
 
-    // save edge detected image
-    FILE *outputFileEdges = fopen("edgesImage.raw", "wb");
-    fwrite(edges, 1, DATA_SIZE, outputFileEdges);
-    fclose(outputFileEdges);
+    // save vertical edge detected image
+    FILE *outputFileHorizontalEdges = fopen("verticalEdges.raw", "wb");
+    fwrite(horizontalEdges, 1, DATA_SIZE, outputFileHorizontalEdges);
+    fclose(outputFileHorizontalEdges);
+
+    // save horizontal edge detected image
+    FILE *outputFileVerticalEdges = fopen("horizontalEdges.raw", "wb");
+    fwrite(verticalEdges, 1, DATA_SIZE, outputFileVerticalEdges);
+    fclose(outputFileVerticalEdges);
 
     // Save horizontal gradient image
     outputFileHGradient = fopen(horizontalOutputFileName, "wb");
@@ -99,21 +107,30 @@ void computeGradients(unsigned char image_input[HEIGHT][WIDTH],
 
 void detectEdges(unsigned char horizontalGradient[HEIGHT][WIDTH],
                  unsigned char verticalGradient[HEIGHT][WIDTH],
-                 unsigned char edges[HEIGHT][WIDTH]) {
+                 unsigned char horizontalEdges[HEIGHT][WIDTH],
+                 unsigned char verticalEdges[HEIGHT][WIDTH]) {
+    // Initialize edges images to zero
+    for (int i = 0; i < HEIGHT; i++) {
+        for (int j = 0; j < WIDTH; j++) {
+            horizontalEdges[i][j] = NO_EDGE;
+            verticalEdges[i][j] = NO_EDGE;
+        }
+    }
+
     for (int i = 1; i < HEIGHT - 1; ++i) {
         for (int j = 1; j < WIDTH - 1; ++j) {
-            // Check if the current pixel's gradient magnitude is above the threshold
-            unsigned char maxGradient = fmax(horizontalGradient[i][j], verticalGradient[i][j]);
-            if (maxGradient < THRESHOLD) {
-                continue;
+            // Horizontal edge detection
+            if (horizontalGradient[i][j] > THRESHOLD &&
+                horizontalGradient[i][j] > horizontalGradient[i][j - 1] &&
+                horizontalGradient[i][j] > horizontalGradient[i][j + 1]) {
+                horizontalEdges[i][j] = EDGE_INTENSITY;
             }
 
-            // Check if the current pixel is a local maximum
-            if ((horizontalGradient[i][j] >= horizontalGradient[i][j - 1] && 
-                 horizontalGradient[i][j] >= horizontalGradient[i][j + 1]) || 
-                (verticalGradient[i][j] >= verticalGradient[i - 1][j] && 
-                 verticalGradient[i][j] >= verticalGradient[i + 1][j])) {
-                edges[i][j] = EDGE_INTENSITY;
+            // Vertical edge detection
+            if (verticalGradient[i][j] > THRESHOLD &&
+                verticalGradient[i][j] > verticalGradient[i - 1][j] &&
+                verticalGradient[i][j] > verticalGradient[i + 1][j]) {
+                verticalEdges[i][j] = EDGE_INTENSITY;
             }
         }
     }
