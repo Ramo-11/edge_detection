@@ -1,137 +1,125 @@
+#include <iostream>
+#include <cmath>
+#include <fstream>
+#include <vector>
 #include <stdio.h>
-#include <math.h>
 
-#define WIDTH 750 // 750 and 275
-#define HEIGHT 500 // 500 and 183
+#define FILTER_SIZE 3
+#define WIDTH 450 // 750 and 450 and 736. unesco750-1 and L and japan
+#define HEIGHT 339 // 500 and 339 and 552. unesco750-1and L and japan
 #define DATA_SIZE WIDTH * HEIGHT
-#define EDGE_INTENSITY 50
-#define NO_EDGE 0
-#define THRESHOLD 30 // This value should be set manually through trial and error
 
-unsigned char clampPixelValue(int value);
-void computeGradients(unsigned char image_input[HEIGHT][WIDTH], 
-                      unsigned char horizontalGradient[HEIGHT][WIDTH], 
-                      unsigned char verticalGradient[HEIGHT][WIDTH]);
+int normalization_constant = 3;
+int threshold = 50;
+const char *fileName = "L.raw"; // unesco750-1.raw and L.raw and japan.raw
 
-void detectEdges(unsigned char horizontalGradient[HEIGHT][WIDTH],
-                 unsigned char verticalGradient[HEIGHT][WIDTH],
-                 unsigned char horizontalEdges[HEIGHT][WIDTH],
-                 unsigned char verticalEdges[HEIGHT][WIDTH]);
+std::vector<int> sobelFilterX3x3{
+    -1, 0, 1, 
+    -2, 0, 2,
+     -1, 0, 1};
+std::vector<int> sobelFilterY3x3{
+    -1, -2, -1, 
+    0, 0, 0, 
+    1, 2, 1};
+
+std::vector<int> sobelFilterX5x5{
+    -1, -2, 0, 2, 1,
+    -2, -4, 0, 4, 1, 
+    -4, -8, 0, 8, 4, 
+    -2, -4, 0, 4, 1,
+    -1, -2, 0, 2, 1};
+
+std::vector<int> sobelFilterY5x5{
+    -1, -2, -4, -2, -1,
+    -2, -4, -8, -4, -2, 
+     0,  0, 0,  0,  0,
+     2, 4, 4, 4, 2, 
+     1, 2, 8, 2, 1};
+
+void calculateGradient(const unsigned char inputImage[HEIGHT][WIDTH], 
+                       unsigned char gradientImage[HEIGHT][WIDTH], 
+                       const std::vector<int>& filterX, 
+                       const std::vector<int>& filterY, 
+                       int filterSize);
+void calculateEdges(const unsigned char gradientImage[HEIGHT][WIDTH], unsigned char edgeImage[HEIGHT][WIDTH]);
 
 int main() {
-    FILE *inputFile;
-    FILE *outputFileHGradient, *outputFileVGradient;
+    FILE *inputFile, *outputFile;
+
     unsigned char inputData[DATA_SIZE];
-    unsigned char edges[HEIGHT][WIDTH];
-    unsigned char image_input[HEIGHT][WIDTH];
-    unsigned char horizontalEdges[HEIGHT][WIDTH], verticalEdges[HEIGHT][WIDTH];
-    unsigned char horizontalGradient[HEIGHT][WIDTH], verticalGradient[HEIGHT][WIDTH];
+    unsigned char inputImage[HEIGHT][WIDTH];
+    unsigned char gradientImage3x3[HEIGHT][WIDTH], gradientImage5x5[HEIGHT][WIDTH];;
+    unsigned char edgeImage3x3[HEIGHT][WIDTH], edgeImage5x5[HEIGHT][WIDTH];
 
-    const char *fileName = "unesco750-1.raw";
-    const char *horizontalOutputFileName = "verticalGradientImage.raw";
-    const char *verticalOutputFileName = "horizontalGradientImage.raw";
-
-    // Open input file and read image data
     inputFile = fopen(fileName, "rb");
     fread(inputData, 1, DATA_SIZE, inputFile);
     fclose(inputFile);
 
-    // Convert linear array to 2D image array
+    // Convert linear array to 2D array for processing
     for (int i = 0; i < HEIGHT; i++) {
         for (int j = 0; j < WIDTH; j++) {
-            image_input[i][j] = inputData[i * WIDTH + j];
+            inputImage[i][j] = inputData[i * WIDTH + j];
         }
     }
 
-    computeGradients(image_input, horizontalGradient, verticalGradient);
-    detectEdges(horizontalGradient, verticalGradient, horizontalEdges, verticalEdges);
+    calculateGradient(inputImage, gradientImage3x3, sobelFilterX3x3, sobelFilterY3x3, 3);
+    calculateEdges(gradientImage3x3, edgeImage3x3);
 
-    // save vertical edge detected image
-    FILE *outputFileHorizontalEdges = fopen("verticalEdges.raw", "wb");
-    fwrite(horizontalEdges, 1, DATA_SIZE, outputFileHorizontalEdges);
-    fclose(outputFileHorizontalEdges);
+    calculateGradient(inputImage, gradientImage5x5, sobelFilterX5x5, sobelFilterY5x5, 5);
+    calculateEdges(gradientImage5x5, edgeImage5x5);
 
-    // save horizontal edge detected image
-    FILE *outputFileVerticalEdges = fopen("horizontalEdges.raw", "wb");
-    fwrite(verticalEdges, 1, DATA_SIZE, outputFileVerticalEdges);
-    fclose(outputFileVerticalEdges);
+    // output 3x3 gradient image
+    outputFile = fopen("outputGradient_3x3.raw", "wb");
+    fwrite(gradientImage3x3, 1, DATA_SIZE, outputFile);
+    fclose(outputFile);
 
-    // Save horizontal gradient image
-    outputFileHGradient = fopen(horizontalOutputFileName, "wb");
-    fwrite(horizontalGradient, 1, DATA_SIZE, outputFileHGradient);
-    fclose(outputFileHGradient);
+    // output 3x3 edge image
+    outputFile = fopen("outputEdge_3x3.raw", "wb");
+    fwrite(edgeImage3x3, 1, DATA_SIZE, outputFile);
+    fclose(outputFile);
 
-    // Save vertical gradient image
-    outputFileVGradient = fopen(verticalOutputFileName, "wb");
-    fwrite(verticalGradient, 1, DATA_SIZE, outputFileVGradient);
-    fclose(outputFileVGradient);
+    // output 5x5 gradient image
+    outputFile = fopen("outputGradient_5x5.raw", "wb");
+    fwrite(gradientImage5x5, 1, DATA_SIZE, outputFile);
+    fclose(outputFile);
 
-    return 0;
+    // output 5x5 edge image
+    outputFile = fopen("outputEdge_5x5.raw", "wb");
+    fwrite(edgeImage5x5, 1, DATA_SIZE, outputFile);
+    fclose(outputFile);
 }
 
-unsigned char clampPixelValue(int value) {
-    if (value < 0) {
-        return 0;
-    } else if (value > 255) {
-        return 255;
+void calculateGradient(const unsigned char inputImage[HEIGHT][WIDTH], 
+                       unsigned char gradientImage[HEIGHT][WIDTH], 
+                       const std::vector<int>& filterX, 
+                       const std::vector<int>& filterY, int filterSize) {
+    if (filterSize == 5) {
+        normalization_constant = 15;
+        threshold = 80;
     }
-    return (unsigned char)value;
-}
-
-void computeGradients(unsigned char image_input[HEIGHT][WIDTH],
-                      unsigned char horizontalGradient[HEIGHT][WIDTH],
-                      unsigned char verticalGradient[HEIGHT][WIDTH]) {
-    int gx, gy;
-
-    for (int i = 1; i < HEIGHT - 1; ++i) {
-        for (int j = 1; j < WIDTH - 1; ++j) {
-            // Compute gradients for horizontal and vertical directions
-            gx = (image_input[i-1][j-1] + 2*image_input[i][j-1] + image_input[i+1][j-1]) -
-                 (image_input[i-1][j+1] + 2*image_input[i][j+1] + image_input[i+1][j+1]);
-
-            gy = (image_input[i-1][j-1] + 2*image_input[i-1][j] + image_input[i-1][j+1]) -
-                 (image_input[i+1][j-1] + 2*image_input[i+1][j] + image_input[i+1][j+1]);
-
-            // Convert gradients to positive values
-            unsigned char abs_gx = clampPixelValue(abs(gx));
-            unsigned char abs_gy = clampPixelValue(abs(gy));
-
-            horizontalGradient[i][j] = abs_gx;
-            verticalGradient[i][j] = abs_gy;
-
-            // Compute the gradient magnitude
-            // gradientImage[i][j] = clampPixelValue((int)sqrt(gx * gx + gy * gy));
-        }
-    }
-}
-
-void detectEdges(unsigned char horizontalGradient[HEIGHT][WIDTH],
-                 unsigned char verticalGradient[HEIGHT][WIDTH],
-                 unsigned char horizontalEdges[HEIGHT][WIDTH],
-                 unsigned char verticalEdges[HEIGHT][WIDTH]) {
-    // Initialize edges images to zero
-    for (int i = 0; i < HEIGHT; i++) {
-        for (int j = 0; j < WIDTH; j++) {
-            horizontalEdges[i][j] = NO_EDGE;
-            verticalEdges[i][j] = NO_EDGE;
-        }
-    }
-
-    for (int i = 1; i < HEIGHT - 1; ++i) {
-        for (int j = 1; j < WIDTH - 1; ++j) {
-            // Horizontal edge detection
-            if (horizontalGradient[i][j] > THRESHOLD &&
-                horizontalGradient[i][j] > horizontalGradient[i][j - 1] &&
-                horizontalGradient[i][j] > horizontalGradient[i][j + 1]) {
-                horizontalEdges[i][j] = EDGE_INTENSITY;
+    for (int y = 0; y < HEIGHT; y++) {
+        for (int x = 0; x < WIDTH; x++) {
+            if (y <= filterSize / 2 || y >= HEIGHT - filterSize / 2 || x <= filterSize / 2 || x >= WIDTH - filterSize / 2) {
+                gradientImage[y][x] = 0;
+                continue;
             }
-
-            // Vertical edge detection
-            if (verticalGradient[i][j] > THRESHOLD &&
-                verticalGradient[i][j] > verticalGradient[i - 1][j] &&
-                verticalGradient[i][j] > verticalGradient[i + 1][j]) {
-                verticalEdges[i][j] = EDGE_INTENSITY;
+            double gradientX = 0, gradientY = 0;
+            int filterIndex = 0;
+            for (int ky = -filterSize / 2; ky <= filterSize / 2; ky++) {
+                for (int kx = -filterSize / 2; kx <= filterSize / 2; kx++, filterIndex++) {
+                    gradientX += filterX[filterIndex] * inputImage[y + ky][x + kx];
+                    gradientY += filterY[filterIndex] * inputImage[y + ky][x + kx];
+                }
             }
+            gradientImage[y][x] = std::sqrt(gradientX * gradientX + gradientY * gradientY) / normalization_constant;
+        }
+    }
+}
+
+void calculateEdges(const unsigned char gradientImage[HEIGHT][WIDTH], unsigned char edgeImage[HEIGHT][WIDTH]) {
+    for (int y = 0; y < HEIGHT; y++) {
+        for (int x = 0; x < WIDTH; x++) {
+            edgeImage[y][x] = (gradientImage[y][x] > threshold) ? 255 : 0;
         }
     }
 }
